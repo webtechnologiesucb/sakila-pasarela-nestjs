@@ -1,0 +1,424 @@
+// This is your Prisma schema file
+// Sakila Payment Gateway - Data Model
+// Combines Sakila DB entities with payment gateway entities
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ═══════════════════════════════════════════════════════════
+// SAKILA ORIGINAL ENTITIES (adapted for PostgreSQL)
+// ═══════════════════════════════════════════════════════════
+
+model Actor {
+  actor_id    Int      @id @default(autoincrement())
+  first_name  String   @db.VarChar(45)
+  last_name   String   @db.VarChar(45)
+  last_update DateTime @default(now()) @updatedAt
+
+  film_actors FilmActor[]
+
+  @@index([last_name], name: "idx_actor_last_name")
+  @@map("actor")
+}
+
+model Language {
+  language_id Int      @id @default(autoincrement())
+  name        String   @db.Char(20)
+  last_update DateTime @default(now()) @updatedAt
+
+  films          Film[] @relation("FilmLanguage")
+  original_films Film[] @relation("FilmOriginalLanguage")
+
+  @@map("language")
+}
+
+model Category {
+  category_id Int      @id @default(autoincrement())
+  name        String   @db.VarChar(25)
+  last_update DateTime @default(now()) @updatedAt
+
+  film_categories FilmCategory[]
+
+  @@map("category")
+}
+
+model Film {
+  film_id              Int        @id @default(autoincrement())
+  title                String     @db.VarChar(255)
+  description          String?    @db.Text
+  release_year         Int?
+  language_id          Int
+  original_language_id Int?
+  rental_duration      Int        @default(3)
+  rental_rate          Decimal    @default(4.99) @db.Decimal(4, 2)
+  length               Int?
+  replacement_cost     Decimal    @default(19.99) @db.Decimal(5, 2)
+  rating               FilmRating @default(G)
+  special_features     String[]
+  last_update          DateTime   @default(now()) @updatedAt
+
+  language          Language       @relation("FilmLanguage", fields: [language_id], references: [language_id])
+  original_language Language?      @relation("FilmOriginalLanguage", fields: [original_language_id], references: [language_id])
+  film_actors       FilmActor[]
+  film_categories   FilmCategory[]
+  inventories       Inventory[]
+  order_items       OrderItem[]
+
+  @@index([title], name: "idx_film_title")
+  @@map("film")
+}
+
+enum FilmRating {
+  G
+  PG
+  PG_13 @map("PG-13")
+  R
+  NC_17 @map("NC-17")
+}
+
+model FilmActor {
+  actor_id    Int
+  film_id     Int
+  last_update DateTime @default(now()) @updatedAt
+
+  actor Actor @relation(fields: [actor_id], references: [actor_id])
+  film  Film  @relation(fields: [film_id], references: [film_id])
+
+  @@id([actor_id, film_id])
+  @@map("film_actor")
+}
+
+model FilmCategory {
+  film_id     Int
+  category_id Int
+  last_update DateTime @default(now()) @updatedAt
+
+  film     Film     @relation(fields: [film_id], references: [film_id])
+  category Category @relation(fields: [category_id], references: [category_id])
+
+  @@id([film_id, category_id])
+  @@map("film_category")
+}
+
+model Country {
+  country_id  Int      @id @default(autoincrement())
+  country     String   @db.VarChar(50)
+  last_update DateTime @default(now()) @updatedAt
+
+  cities City[]
+
+  @@map("country")
+}
+
+model City {
+  city_id     Int      @id @default(autoincrement())
+  city        String   @db.VarChar(50)
+  country_id  Int
+  last_update DateTime @default(now()) @updatedAt
+
+  country   Country   @relation(fields: [country_id], references: [country_id])
+  addresses Address[]
+
+  @@index([country_id], name: "idx_fk_country_id")
+  @@map("city")
+}
+
+model Address {
+  address_id  Int      @id @default(autoincrement())
+  address     String   @db.VarChar(50)
+  address2    String?  @db.VarChar(50)
+  district    String   @db.VarChar(20)
+  city_id     Int
+  postal_code String?  @db.VarChar(10)
+  phone       String   @db.VarChar(20)
+  last_update DateTime @default(now()) @updatedAt
+
+  city      City       @relation(fields: [city_id], references: [city_id])
+  customers Customer[]
+  stores    Store[]
+  staff     Staff[]
+
+  @@index([city_id], name: "idx_fk_city_id")
+  @@map("address")
+}
+
+model Store {
+  store_id         Int      @id @default(autoincrement())
+  manager_staff_id Int?     @unique
+  address_id       Int
+  last_update      DateTime @default(now()) @updatedAt
+
+  address     Address     @relation(fields: [address_id], references: [address_id])
+  manager     Staff?      @relation("StoreManager", fields: [manager_staff_id], references: [staff_id])
+  staff       Staff[]     @relation("StoreStaff")
+  customers   Customer[]
+  inventories Inventory[]
+
+  @@index([address_id], name: "idx_fk_address_id_store")
+  @@map("store")
+}
+
+model Staff {
+  staff_id    Int      @id @default(autoincrement())
+  first_name  String   @db.VarChar(45)
+  last_name   String   @db.VarChar(45)
+  address_id  Int
+  email       String?  @db.VarChar(50)
+  store_id    Int
+  active      Boolean  @default(true)
+  username    String   @db.VarChar(16)
+  password    String?  @db.VarChar(255)
+  last_update DateTime @default(now()) @updatedAt
+
+  address       Address   @relation(fields: [address_id], references: [address_id])
+  store         Store     @relation("StoreStaff", fields: [store_id], references: [store_id])
+  rentals       Rental[]
+  payments      Payment[]
+  managed_store Store?    @relation("StoreManager")
+
+  @@map("staff")
+}
+
+model Customer {
+  customer_id Int      @id @default(autoincrement())
+  store_id    Int
+  first_name  String   @db.VarChar(45)
+  last_name   String   @db.VarChar(45)
+  email       String?  @db.VarChar(50)
+  address_id  Int
+  active      Boolean  @default(true)
+  create_date DateTime @default(now())
+  last_update DateTime @default(now()) @updatedAt
+
+  store    Store     @relation(fields: [store_id], references: [store_id])
+  address  Address   @relation(fields: [address_id], references: [address_id])
+  rentals  Rental[]
+  payments Payment[]
+  orders   Order[]
+
+  @@index([store_id], name: "idx_fk_store_id_customer")
+  @@index([email], name: "idx_customer_email")
+  @@map("customer")
+}
+
+model Inventory {
+  inventory_id Int      @id @default(autoincrement())
+  film_id      Int
+  store_id     Int
+  last_update  DateTime @default(now()) @updatedAt
+
+  film    Film     @relation(fields: [film_id], references: [film_id])
+  store   Store    @relation(fields: [store_id], references: [store_id])
+  rentals Rental[]
+
+  @@index([film_id], name: "idx_fk_film_id_inventory")
+  @@index([store_id, film_id], name: "idx_store_id_film_id")
+  @@map("inventory")
+}
+
+model Rental {
+  rental_id    Int       @id @default(autoincrement())
+  rental_date  DateTime  @default(now())
+  inventory_id Int
+  customer_id  Int
+  return_date  DateTime?
+  staff_id     Int
+  last_update  DateTime  @default(now()) @updatedAt
+
+  inventory Inventory @relation(fields: [inventory_id], references: [inventory_id])
+  customer  Customer  @relation(fields: [customer_id], references: [customer_id])
+  staff     Staff     @relation(fields: [staff_id], references: [staff_id])
+  payments  Payment[]
+
+  @@index([customer_id], name: "idx_fk_customer_id_rental")
+  @@index([inventory_id], name: "idx_fk_inventory_id")
+  @@map("rental")
+}
+
+model Payment {
+  payment_id   Int      @id @default(autoincrement())
+  customer_id  Int
+  staff_id     Int
+  rental_id    Int?
+  amount       Decimal  @db.Decimal(5, 2)
+  payment_date DateTime @default(now())
+
+  customer Customer @relation(fields: [customer_id], references: [customer_id])
+  staff    Staff    @relation(fields: [staff_id], references: [staff_id])
+  rental   Rental?  @relation(fields: [rental_id], references: [rental_id])
+
+  @@index([customer_id], name: "idx_fk_customer_id_payment")
+  @@index([staff_id], name: "idx_fk_staff_id_payment")
+  @@map("payment")
+}
+
+// ═══════════════════════════════════════════════════════════
+// PAYMENT GATEWAY NEW ENTITIES
+// ═══════════════════════════════════════════════════════════
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique @db.VarChar(255)
+  password_hash String   @db.VarChar(255)
+  name          String   @db.VarChar(100)
+  role          UserRole @default(STAFF)
+  is_active     Boolean  @default(true)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  audit_logs AuditLog[]
+
+  @@index([email], name: "idx_user_email")
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  STAFF
+  VIEWER
+}
+
+model PaymentMethod {
+  id          String  @id @default(uuid())
+  code        String  @unique @db.VarChar(50)
+  name        String  @db.VarChar(100)
+  provider    String? @db.VarChar(100)
+  description String? @db.Text
+  is_active   Boolean @default(true)
+
+  payment_transactions PaymentTransaction[]
+
+  @@map("payment_method")
+}
+
+model Order {
+  id           String      @id @default(uuid())
+  order_number String      @unique @db.VarChar(50)
+  customer_id  Int
+  status       OrderStatus @default(PENDING)
+  currency     String      @default("BOB") @db.Char(3)
+  subtotal     Decimal     @db.Decimal(19, 4)
+  tax          Decimal     @default(0) @db.Decimal(19, 4)
+  total        Decimal     @db.Decimal(19, 4)
+  notes        String?     @db.Text
+  created_at   DateTime    @default(now())
+  updated_at   DateTime    @updatedAt
+
+  customer             Customer             @relation(fields: [customer_id], references: [customer_id])
+  order_items          OrderItem[]
+  payment_transactions PaymentTransaction[]
+
+  @@index([customer_id], name: "idx_order_customer_id")
+  @@index([status], name: "idx_order_status")
+  @@index([order_number], name: "idx_order_number")
+  @@map("orders")
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PAID
+  CANCELLED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+model OrderItem {
+  id         String  @id @default(uuid())
+  order_id   String
+  film_id    Int
+  quantity   Int     @default(1)
+  unit_price Decimal @db.Decimal(19, 4)
+  subtotal   Decimal @db.Decimal(19, 4)
+
+  order Order @relation(fields: [order_id], references: [id])
+  film  Film  @relation(fields: [film_id], references: [film_id])
+
+  @@index([order_id], name: "idx_order_item_order_id")
+  @@map("order_items")
+}
+
+model PaymentTransaction {
+  id                String            @id @default(uuid())
+  order_id          String
+  transaction_ref   String            @unique @db.VarChar(100)
+  idempotency_key   String            @unique @db.VarChar(255)
+  amount             Decimal           @db.Decimal(19, 4)
+  currency           String            @default("BOB") @db.Char(3)
+  payment_method_id  String
+  status             TransactionStatus @default(PENDING)
+  response_code      String?           @db.VarChar(20)
+  response_message   String?           @db.Text
+  provider_reference String?           @db.VarChar(100)
+  payer_identifier   String?           @db.VarChar(100)
+  metadata           Json?
+  created_at        DateTime          @default(now())
+  updated_at        DateTime          @updatedAt
+
+  order          Order         @relation(fields: [order_id], references: [id])
+  payment_method PaymentMethod @relation(fields: [payment_method_id], references: [id])
+  refunds        Refund[]
+
+  @@index([order_id], name: "idx_txn_order_id")
+  @@index([transaction_ref], name: "idx_txn_ref")
+  @@index([status], name: "idx_txn_status")
+  @@map("payment_transactions")
+}
+
+enum TransactionStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+model Refund {
+  id               String       @id @default(uuid())
+  transaction_id   String
+  amount           Decimal      @db.Decimal(19, 4)
+  reason           String       @db.Text
+  status           RefundStatus @default(PENDING)
+  reference        String       @unique @db.VarChar(100)
+  response_code    String?      @db.VarChar(20)
+  response_message String?      @db.Text
+  created_at       DateTime     @default(now())
+  updated_at       DateTime     @updatedAt
+
+  transaction PaymentTransaction @relation(fields: [transaction_id], references: [id])
+
+  @@index([transaction_id], name: "idx_refund_transaction_id")
+  @@map("refunds")
+}
+
+enum RefundStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  user_id     String?
+  action      String   @db.VarChar(100)
+  entity_type String   @db.VarChar(50)
+  entity_id   String?  @db.VarChar(100)
+  old_values  Json?
+  new_values  Json?
+  ip_address  String?  @db.VarChar(45)
+  user_agent  String?  @db.Text
+  created_at  DateTime @default(now())
+
+  user User? @relation(fields: [user_id], references: [id])
+
+  @@index([entity_type, entity_id], name: "idx_audit_entity")
+  @@index([user_id], name: "idx_audit_user_id")
+  @@index([created_at], name: "idx_audit_created_at")
+  @@map("audit_logs")
+}
